@@ -9,6 +9,7 @@
  */
 #include <string.h>
 #include <stdlib.h>
+#include <errno.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -27,7 +28,8 @@ static const char *TAG = "tcp_ctrl";
 
 #define CTRL_PORT       9001
 #define MAX_CLIENTS     4
-#define MAX_LINE        512          /* 单条命令最大长度（含 '\n'） */
+#define MAX_LINE        512          /* 单条命令最大长度（含 '\n'），超长本行丢弃并回错 */
+#define CLIENT_IDLE_MS  60000        /* 客户端空闲超时：超过无数据则关闭，释放槽位 */
 #define LED_MIN_CH      1
 #define LED_MAX_CH      10
 
@@ -327,8 +329,15 @@ static void client_task(void *arg)
     while (s_running) {
         char tmp[MAX_LINE];
         int n = recv(fd, tmp, sizeof(tmp) - 1, 0);
-        if (n <= 0) {
+        if (n < 0) {
+            /* SO_RCVTIMEO 触发的空闲超时：关闭连接并释放槽位 */
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                ESP_LOGI(TAG, "client idle timeout, close");
+            }
             goto done;
+        }
+        if (n == 0) {
+            goto done;   /* 对端正常关闭 */
         }
         for (int i = 0; i < n; i++) {
             char c = tmp[i];
@@ -398,6 +407,9 @@ static void listen_task(void *arg)
             if (!s_running) break;
             continue;
         }
+        /* 客户端空闲超时：60s 无数据自动关闭，释放槽位，防死连接占满 */
+        struct timeval tv = { .tv_sec = CLIENT_IDLE_MS / 1000, .tv_usec = 0 };
+        setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
         xSemaphoreTake(s_slot_mutex, portMAX_DELAY);
         if (!s_running) {
             xSemaphoreGive(s_slot_mutex);
