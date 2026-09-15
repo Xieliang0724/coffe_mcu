@@ -23,6 +23,7 @@
 #include "led_control.h"
 #include "modbus_slave.h"
 #include "rgb_led.h"
+#include "tcp_ctrl.h"
 #include "web_server.h"
 #include "wifi_mgr.h"
 
@@ -125,6 +126,10 @@ void app_main(void)
     /* Modbus TCP 从站：固定端口 502，把 10 路 LED 以保持寄存器暴露给上位机。
      * 须在 wifi_mgr_init（esp_netif_init/lwIP）之后启动。 */
     modbus_slave_init();
+
+    /* 个性化 TCP LED 控制服务：固定端口 9001，JSON 协议（见协议文档）。
+     * 同样须在 wifi_mgr_init 之后（依赖 lwIP）。 */
+    tcp_ctrl_init();
 
     /* Web 服务器常驻：SoftAP 开启时可经 192.168.4.1 访问，
      * 热点关闭（ap_off）后仍可经路由器分配的 IP 访问，方便再次配网。 */

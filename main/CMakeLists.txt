@@ -7,6 +7,7 @@ idf_component_register(
         "rgb_led.c"
         "led_control.c"
         "modbus_slave.c"
+        "tcp_ctrl.c"
     INCLUDE_DIRS "."
     EMBED_FILES
         "www/index.html"

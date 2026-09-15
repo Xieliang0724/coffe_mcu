@@ -1,6 +1,6 @@
 # coffe_mcu — 咖啡台 LED 控制 + Web 配网固件
 
-基于 `esp32c5_web_provision` 二次开发：保留 **SoftAP + Web 配网 / mDNS**，新增 **10 路咖啡台 LED 独立开关** 与 **Modbus TCP 从站**（把 LED 以保持寄存器暴露给上位机）；**移除 TLS**（本项目不需要）。目标芯片 **ESP32-C5（N16R8：16MB flash / 8MB PSRAM）**。
+基于 `esp32c5_web_provision` 二次开发：保留 **SoftAP + Web 配网 / mDNS**，新增 **10 路咖啡台 LED 独立开关**、**自定义 TCP 控制协议（端口 9001）** 与 **Modbus TCP 从站（端口 502）**；**移除 TLS**（本项目不需要）。目标芯片 **ESP32-C5（N16R8：16MB flash / 8MB PSRAM）**。
 
 ## 功能特性
 
@@ -16,6 +16,7 @@
 - 🔘 **复位按键**：长按 GPIO9（BOOT 键）3 秒清除配置并重启进入配网模式
 - 💡 **咖啡台 10 路 LED 独立开关**：网页点击控制 10 片灯片 亮/灭，状态持久化（详见下文「咖啡台 LED 控制」）
 - 🔌 **Modbus TCP 从站**：固定监听 502，把 10 路 LED 以保持寄存器暴露（详见下文），**不占串口**（UART1 留给 485 舵机）
+- 🔗 **自定义 TCP 控制协议**：固定监听 **9001**，客户主动连接发 JSON 指令控制 10 路 LED，执行后回应答（详见下文「自定义 TCP 控制协议」及协议文档）
 
 ### 🛡️ 失联兜底（AP 与 STA 不允许同时死掉）
 
@@ -59,6 +60,7 @@ coffe_mcu/
     ├── web_server.[ch]      # HTTP 配网服务器（REST API）
     ├── led_control.[ch]     # 咖啡台 10 路 LED 开关（GPIO + NVS 持久化）
     ├── modbus_slave.[ch]    # Modbus TCP 从站（端口 502，LED 保持寄存器）
+    ├── tcp_ctrl.[ch]        # 自定义 TCP LED 控制协议（端口 9001，JSON）
     ├── rgb_led.[ch]         # WS2812 状态指示灯
     └── www/index.html       # 内嵌配网网页（EMBED_FILES）
 ```
@@ -140,6 +142,25 @@ coffe_mcu **自身就是一个 Modbus TCP 从站（服务器）**：上电即监
 > 上位机示例：写寄存器 `0x0000`=1 → 点亮灯片 CH1；读 `0x0000..0x0004` → 获取前 5 路状态。
 > 常用工具：`mbpoll`、`Modbus Poll`、`pymodbus`。
 
+## 自定义 TCP 控制协议（端口 9001）
+
+对外给客户/上位机用的**自定义接口**：客户作为 **TCP 客户端** `connect <设备IP>:9001`，按 **JSON 协议**发命令，设备**执行完毕后回一个应答**。
+
+- **帧格式**：每条命令 = 一行 JSON + `\n`；应答同样一行 JSON + `\n`
+- **命令**：`ping` / `led_set` / `led_set_all` / `led_set_batch` / `led_status`
+- 支持最大 4 个并发连接；应答带请求的 `seq` 用于匹配
+
+**完整协议文档**：[`docs/2026-09-15_LED控制TCP协议_v1.0.md`](docs/2026-09-15_LED控制TCP协议_v1.0.md)
+
+快速示例（`nc`/`pymodbus` 类比）：
+```bash
+# 点亮 CH3
+printf '{"seq":1,"cmd":"led_set","ch":3,"on":true}\n' | nc <设备IP> 9001
+# 应答：{"seq":1,"ok":true,"cmd":"led_set","data":{"ch":3,"on":true}}
+```
+
+> ⚠️ 与 Modbus 从站（502）**可同时监听**，都只占网络端口、不占串口。
+
 ## 咖啡台 LED 控制
 
 配网页面新增 **☕ 咖啡台 LED 控制** 卡片，点击 10 个按钮分别控制 10 片灯片的 亮/灭（通过 **NPN/漏极输出** 的低边开关板，高电平（GPIO 输出低）拉低 12V LED 负载地）。
@@ -197,7 +218,7 @@ coffe_mcu **自身就是一个 Modbus TCP 从站（服务器）**：上电即监
 
 ### 🔒 安全（商用前重点评估）
 
-- **所有 HTTP API 无任何鉴权**，且设备入网后 Web 服务常驻监听（路由器分配的 IP）：同网段任意设备可读取状态、**修改 Wi-Fi 配置、恢复出厂**。Modbus TCP 从站 502 端口同理（可读写 LED 状态）。
+- **所有 HTTP API 无任何鉴权**，且设备入网后 Web 服务常驻监听（路由器分配的 IP）：同网段任意设备可读取状态、**修改 Wi-Fi 配置、恢复出厂**。**自定义 TCP 控制协议（9001）与 Modbus TCP 从站（502）同理**——连上即可读写 LED，当前无令牌。
   - 建议：部署于可信网段/独立 VLAN 或在交换机层隔离；客户端 IP 白名单仅是过滤不是防护
   - 后续可加可配置访问令牌（token）
 - 配网凭据经 HTTP 明文传输（SoftAP 场景可接受；经路由器 LAN 访问时注意嗅探风险。coffe_mcu 无 TLS，Modbus TCP 从站同样是明文）
