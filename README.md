@@ -14,7 +14,7 @@
 - 🔁 **自动回退**：STA 连接失败超过 `CONFIG_PROV_CONNECT_RETRY_MAX` 次（默认 5 次）后自动重新打开 SoftAP 进入配网模式
 - 💾 **配置持久化**：配置保存在 NVS，断电重启自动连接
 - 🔘 **复位按键**：长按 GPIO9（BOOT 键）3 秒清除配置并重启进入配网模式
-- 💡 **咖啡台 10 路 LED 独立开关**：网页点击控制 10 片灯片 亮/灭，状态持久化（详见下文「咖啡台 LED 控制」）
+- 💡 **咖啡台 10 路 LED 独立开关**：网页点击控制 10 片灯片 亮/灭，状态**仅内存、掉电全灭**（详见下文「咖啡台 LED 控制」）
 - 🔌 **Modbus TCP 从站**：固定监听 502，把 10 路 LED 以保持寄存器暴露（详见下文），**不占串口**（UART1 留给 485 舵机）
 - 🔗 **自定义 TCP 控制协议**：固定监听 **9001**，客户主动连接发 JSON 指令控制 10 路 LED，执行后回应答（详见下文「自定义 TCP 控制协议」及协议文档）
 
@@ -58,7 +58,7 @@ coffe_mcu/
     ├── config_store.[ch]    # NVS 配置持久化（配网）
     ├── wifi_mgr.[ch]        # Wi-Fi 状态机（AP/STA/扫描/静态IP/回退/兜底）
     ├── web_server.[ch]      # HTTP 配网服务器（REST API）
-    ├── led_control.[ch]     # 咖啡台 10 路 LED 开关（GPIO + NVS 持久化）
+    ├── led_control.[ch]     # 咖啡台 10 路 LED 开关（GPIO，状态仅内存）
     ├── modbus_slave.[ch]    # Modbus TCP 从站（端口 502，LED 保持寄存器）
     ├── tcp_ctrl.[ch]        # 自定义 TCP LED 控制协议（端口 9001，JSON）
     ├── rgb_led.[ch]         # WS2812 状态指示灯
@@ -166,7 +166,7 @@ printf '{"seq":1,"cmd":"led_set","ch":3,"on":true}\n' | nc <设备IP> 9001
 配网页面新增 **☕ 咖啡台 LED 控制** 卡片，点击 10 个按钮分别控制 10 片灯片的 亮/灭（通过 **NPN/漏极输出** 的低边开关板，高电平（GPIO 输出低）拉低 12V LED 负载地）。
 
 - **通道 → GPIO 映射**（`led_control.c`）：CH1..CH10 = `GPIO 0,1,4,8,13,14,16,17,23,24`
-- **状态持久化**：存于 NVS 命名空间 `coffee_led`（key `st`），上电恢复上次状态；上电先全部熄灭再恢复
+- **状态仅内存、掉电全灭**：LED 状态不写入 NVS/Flash（避免高频切换损耗 Flash），重启后所有灯恢复为灭
 - **高有效**：`ACTIVE_LOW=0`（GPIO 置 1 = LED 亮）
 
 > ⚠️ 请务必先确认上述 GPIO 在您的 N16R8 板上已引出且空闲，避开：`GPIO27`（RGB）、`GPIO9`（复位）、`GPIO11/12`（串口控制台）、`GPIO15`（PSRAM 占用）、`GPIO19/20`（USB）、Strapping（`2,3,7,25,26,27,28`）。`GPIO5/6` 已**预留给未来的 485 舵机总线**（本次未用）。

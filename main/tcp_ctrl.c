@@ -28,8 +28,8 @@ static const char *TAG = "tcp_ctrl";
 
 #define CTRL_PORT       9001
 #define MAX_CLIENTS     4
-#define MAX_LINE        512          /* 单条命令最大长度（含 '\n'），超长本行丢弃并回错 */
-#define CLIENT_IDLE_MS  60000        /* 客户端空闲超时：超过无数据则关闭，释放槽位 */
+#define MAX_LINE        1024         /* 单条命令最大长度（含 '\n'），超长本行丢弃并回错 */
+#define CLIENT_IDLE_MS  300000       /* 客户端空闲超时：300s 无数据则关闭，释放槽位 */
 #define LED_MIN_CH      1
 #define LED_MAX_CH      10
 
@@ -188,6 +188,10 @@ static cJSON *exec_led_set_batch(const cJSON *req, const char *err[2])
         return NULL;
     }
     int n = cJSON_GetArraySize(list);
+    if (n > LED_MAX_CH) {
+        err[0] = E_INVALID_LIST; err[1] = "list 最多 10 条";
+        return NULL;
+    }
     int *chs = malloc(sizeof(int) * n);
     bool *ons = malloc(sizeof(bool) * n);
     if (!chs || !ons) {

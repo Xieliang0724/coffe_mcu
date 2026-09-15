@@ -6,7 +6,7 @@
 
 ### ✨ 新增
 
-- **咖啡台 10 路 LED 独立开关**：`led_control.[ch]`，CH1..CH10 映射 `GPIO 0,1,4,8,13,14,16,17,23,24`；NPN/漏极低边开关，高有效；状态存 NVS（命名空间 `coffee_led`），上电先全灭再恢复。
+- **咖啡台 10 路 LED 独立开关**：`led_control.[ch]`，CH1..CH10 映射 `GPIO 0,1,4,8,13,14,16,17,23,24`；NPN/漏极低边开关，高有效；状态**仅内存**，掉电全灭。
 - **LED REST 接口**：`GET /api/leds`、`POST /api/led`；网页新增「☕ 咖啡台 LED 控制」卡片。
 - **自定义 TCP LED 控制协议（端口 9001）**：`tcp_ctrl.[ch]`，客户 TCP 主动连接、JSON 指令控制 10 路 LED、执行后回应答；命令 `ping/led_set/led_set_all/led_set_batch/led_status`。协议文档：`docs/2026-09-15_LED控制TCP协议_v1.0.md`。
 - **Modbus TCP 从站**：`modbus_slave.[ch]`，固定监听端口 **502**，把 10 路 LED 以**保持寄存器** `0x0000..0x0009` 暴露（值 0/1），支持功能码 `0x03/0x06/0x10`；纯网络实现，**不占用任何串口**。
