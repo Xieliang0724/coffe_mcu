@@ -14,6 +14,7 @@
 
 #include "config_store.h"
 #include "led_control.h"
+#include "ota_update.h"
 #include "web_server.h"
 #include "wifi_mgr.h"
 
@@ -439,6 +440,16 @@ static esp_err_t handle_reset_post(httpd_req_t *req)
 }
 
 /* ------------------------------------------------------------------ */
+/* OTA 固件升级                                                        */
+/* ------------------------------------------------------------------ */
+
+/* POST /api/ota  上传固件二进制，写入另一分区并重启（失败自动回滚） */
+static esp_err_t handle_ota_post(httpd_req_t *req)
+{
+    return ota_update_handle(req);
+}
+
+/* ------------------------------------------------------------------ */
 /* 咖啡台 LED 控制                                                      */
 /* ------------------------------------------------------------------ */
 
@@ -525,6 +536,7 @@ static esp_err_t register_handlers(httpd_handle_t server)
         { .uri = "/api/disconnect", .method = HTTP_POST, .handler = handle_disconnect_post },
         { .uri = "/api/leds",     .method = HTTP_GET,  .handler = handle_leds_get },
         { .uri = "/api/led",      .method = HTTP_POST, .handler = handle_led_post },
+        { .uri = "/api/ota",      .method = HTTP_POST, .handler = handle_ota_post },
     };
     for (size_t i = 0; i < sizeof(uris) / sizeof(uris[0]); i++) {
         esp_err_t ret = httpd_register_uri_handler(server, &uris[i]);

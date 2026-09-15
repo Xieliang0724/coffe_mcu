@@ -10,6 +10,7 @@ idf_component_register(
         "modbus_slave.c"
         "tcp_ctrl.c"
         "ble_led.c"
+        "ota_update.c"
     INCLUDE_DIRS "."
     EMBED_FILES
         "www/index.html"
@@ -25,6 +26,7 @@ idf_component_register(
         esp_driver_gpio
         esp_system
         esp_app_format
+        app_update
         led_strip
         mdns
         lwip

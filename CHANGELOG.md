@@ -1,5 +1,19 @@
 # Changelog
 
+## [v1.1.0] - 2026-09-15
+
+### ✨ 新增
+
+- **OTA 固件升级**：`ota_update.[ch]` + `POST /api/ota`。网页「🛠 固件升级」上传 `.bin` → 写入另一 app 分区（`ota_0`/`ota_1`，各 7.5MB）→ 校验 → 切换启动分区 → 重启。**升级失败自动回滚到旧分区**，掉电不损坏当前固件。
+- **自定义分区表** `partitions.csv`：`ota_0`/`ota_1` 各 7.5MB，支持 OTA；app 分区剩余约 81%。
+- **README 重写**：贴合当前 coffe_mcu（多接口/BLE/OTA/分区/供电），移除基座项目过时内容。
+
+### 🔧 变更
+
+- 固件版本号升至 **v1.1.0**（`/api/status` 与开机日志 `App version:` 同步）。
+
+---
+
 ## [v1.0.0] - coffe_mcu
 
 > 基于 `esp32c5_web_provision`（v1.2.4）二次开发的新项目 **coffe_mcu**。目标芯片 ESP32-C5 **N16R8**。

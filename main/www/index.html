@@ -144,6 +144,16 @@
   <div class="hint" id="ledStatus" style="margin-top:10px;"></div>
 </div>
 
+<div class="card" style="max-width:480px;">
+  <h1>🛠 固件升级</h1>
+  <div class="sub">选择 .bin 固件文件上传，升级成功后自动重启（失败不生效，可继续用旧版）</div>
+  <div class="hint" id="otaStatus" style="margin-top:6px;"></div>
+  <input type="file" id="otaFile" accept=".bin" style="display:none;">
+  <label for="otaFile" class="secondary" style="display:inline-block;margin-top:8px;padding:10px 14px;border:1px solid #d1d5db;border-radius:8px;cursor:pointer;">选择固件文件</label>
+  <span id="otaFileName" class="hint"></span>
+  <button type="button" id="btnOta" class="primary" style="margin-top:10px;width:100%;">上传并升级</button>
+</div>
+
 <script>
 (function () {
   var statusEl = document.getElementById('status');
@@ -393,6 +403,37 @@
   }
   ledLoad();
   setInterval(ledLoad, 3000);
+
+  /* ---- 固件升级 (OTA) ---- */
+  var otaStatus = document.getElementById('otaStatus');
+  var otaFileEl = document.getElementById('otaFile');
+  var otaFileNameEl = document.getElementById('otaFileName');
+  var btnOta = document.getElementById('btnOta');
+  var otaPicked = null;
+
+  otaFileEl.addEventListener('change', function () {
+    otaPicked = otaFileEl.files && otaFileEl.files[0] ? otaFileEl.files[0] : null;
+    otaFileNameEl.textContent = otaPicked ? ('已选: ' + otaPicked.name) : '';
+  });
+
+  btnOta.addEventListener('click', function () {
+    if (!otaPicked) {
+      otaStatus.textContent = '⚠️ 请先选择 .bin 固件文件';
+      return;
+    }
+    otaStatus.textContent = '⏳ 上传并升级中…（请勿断电，完成后设备自动重启）';
+    btnOta.disabled = true;
+    fetch('/api/ota', { method: 'POST', body: otaPicked })
+      .then(function (r) { return r.text(); })
+      .then(function (t) {
+        otaStatus.textContent = '✅ ' + (t || '已提交，设备重启中…');
+        setTimeout(function () { location.reload(); }, 3000);
+      })
+      .catch(function (e) {
+        otaStatus.textContent = '❌ 升级失败：' + e.message + '（设备仍在运行旧版固件）';
+        btnOta.disabled = false;
+      });
+  });
 
   startScan();
 })();
