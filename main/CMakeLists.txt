@@ -6,8 +6,10 @@ idf_component_register(
         "web_server.c"
         "rgb_led.c"
         "led_control.c"
+        "led_cmd.c"
         "modbus_slave.c"
         "tcp_ctrl.c"
+        "ble_led.c"
     INCLUDE_DIRS "."
     EMBED_FILES
         "www/index.html"
@@ -26,4 +28,5 @@ idf_component_register(
         led_strip
         mdns
         lwip
+        bt
 )

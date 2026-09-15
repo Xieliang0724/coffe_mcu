@@ -17,6 +17,7 @@
 - 💡 **咖啡台 10 路 LED 独立开关**：网页点击控制 10 片灯片 亮/灭，状态**仅内存、掉电全灭**（详见下文「咖啡台 LED 控制」）
 - 🔌 **Modbus TCP 从站**：固定监听 502，把 10 路 LED 以保持寄存器暴露（详见下文），**不占串口**（UART1 留给 485 舵机）
 - 🔗 **自定义 TCP 控制协议**：固定监听 **9001**，客户主动连接发 JSON 指令控制 10 路 LED，执行后回应答（详见下文「自定义 TCP 控制协议」及协议文档）
+- 📶 **蓝牙 (BLE) 控制**：广播名 `CoffeeTable-LED`，App 通过 BLE GATT 写入 JSON 命令控制 10 路 LED（命令语义与 TCP 一致）；与 WiFi/9001/502 并存
 
 ### 🛡️ 失联兜底（AP 与 STA 不允许同时死掉）
 
@@ -59,8 +60,10 @@ coffe_mcu/
     ├── wifi_mgr.[ch]        # Wi-Fi 状态机（AP/STA/扫描/静态IP/回退/兜底）
     ├── web_server.[ch]      # HTTP 配网服务器（REST API）
     ├── led_control.[ch]     # 咖啡台 10 路 LED 开关（GPIO，状态仅内存）
-    ├── modbus_slave.[ch]    # Modbus TCP 从站（端口 502，LED 保持寄存器）
+    ├── led_cmd.[ch]         # LED JSON 命令分发（TCP/BLE 共用）
     ├── tcp_ctrl.[ch]        # 自定义 TCP LED 控制协议（端口 9001，JSON）
+    ├── ble_led.[ch]         # BLE GATT 控制服务（NimBLE，App 控制）
+    ├── modbus_slave.[ch]    # Modbus TCP 从站（端口 502，LED 保持寄存器）
     ├── rgb_led.[ch]         # WS2812 状态指示灯
     └── www/index.html       # 内嵌配网网页（EMBED_FILES）
 ```
