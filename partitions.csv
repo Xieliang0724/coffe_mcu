@@ -1,0 +1,9 @@
+# Name,   Type, SubType, Offset,  Size, Flags
+# 咖啡台智能终端 · 分区表（16MB flash，支持 OTA）
+#   OTA：ota_0 / ota_1 两个等大 app 分区（各 7.5MB），烧录时轮流升级
+#   数据分区 otadata/nvs/phy 使用自动偏移
+nvs,      data, nvs,     ,        0x6000,
+otadata,  data, ota,     ,        0x2000,
+phy_init, data, phy,     ,        0x1000,
+ota_0,    app,  ota_0,   ,        0x780000,
+ota_1,    app,  ota_1,   ,        0x780000,

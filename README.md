@@ -1,277 +1,120 @@
-# coffe_mcu — 咖啡台 LED 控制 + Web 配网固件
+# coffe_mcu — 咖啡台智能终端固件
 
-基于 `esp32c5_web_provision` 二次开发：保留 **SoftAP + Web 配网 / mDNS**，新增 **10 路咖啡台 LED 独立开关**、**自定义 TCP 控制协议（端口 9001）** 与 **Modbus TCP 从站（端口 502）**；**移除 TLS**（本项目不需要）。目标芯片 **ESP32-C5（N16R8：16MB flash / 8MB PSRAM）**。
+基于 `esp32c5_web_provision` 二次开发的**咖啡台智能终端**固件，面向客户提供多接口控制 10 路 LED；已**移除 TLS**（本项目不需要），并升级为 **支持 OTA** 的分区布局。目标芯片 **ESP32-C5（N16R8：16MB flash / 8MB PSRAM）**。
+
+> 对外客户协议文档（去 MCU 细节）见 `docs/`；本 README 为内部/集成商使用，保留 MCU 细节。
 
 ## 功能特性
 
-- 🌐 **Web 配网**：设备开机进入 SoftAP 热点，手机/电脑连接后访问 `http://192.168.4.1` 打开配网页面
-- 🔎 **mDNS**：联网后局域网内可直接访问 `http://esp32c5.local`（无需记 IP）
-- 📶 **SSID 下拉选择**：自动双频（2.4G + 5G）扫描，从列表选择 Wi-Fi，也支持手动输入（含隐藏网络）
-- 🌐 **IP 方式可选**：
-  - **DHCP 自动获取**（默认）
-  - **静态 IP**：可自定义 IP / 子网掩码 / 网关 / DNS（留空则掩码默认 `255.255.255.0`、DNS 默认用网关）
-- 📴 **SoftAP 可关**：配网时勾选"连接成功后关闭热点"，STA 连上后 AP 自动关闭（省电、更安全）；不勾选则 AP 保持开启，随时可重新配网
-- 🔁 **自动回退**：STA 连接失败超过 `CONFIG_PROV_CONNECT_RETRY_MAX` 次（默认 5 次）后自动重新打开 SoftAP 进入配网模式
-- 💾 **配置持久化**：配置保存在 NVS，断电重启自动连接
-- 🔘 **复位按键**：长按 GPIO9（BOOT 键）3 秒清除配置并重启进入配网模式
-- 💡 **咖啡台 10 路 LED 独立开关**：网页点击控制 10 片灯片 亮/灭，状态**仅内存、掉电全灭**（详见下文「咖啡台 LED 控制」）
-- 🔌 **Modbus TCP 从站**：固定监听 502，把 10 路 LED 以保持寄存器暴露（详见下文），**不占串口**（UART1 留给 485 舵机）
-- 🔗 **自定义 TCP 控制协议**：固定监听 **9001**，客户主动连接发 JSON 指令控制 10 路 LED，执行后回应答（详见下文「自定义 TCP 控制协议」及协议文档）
-- 📶 **蓝牙 (BLE) 控制**：广播名 `CoffeeTable-LED`，App 通过 BLE GATT 写入 JSON 命令控制 10 路 LED（命令语义与 TCP 一致）；与 WiFi/9001/502 并存
+- 🌐 **Web 配网**：SoftAP 热点 + 网页配网（`http://192.168.4.1`）；支持 SSID 下拉、手动输入、双频扫描
+- 🔎 **mDNS**：联网后经 `http://esp32c5.local` 访问
+- 📶 **静态/动态 IP** 可选；**SoftAP 可关**；**连接失败自动回退配网**；**失联兜底**（AP/STA 至少一个可用）
+- 💾 **Wi-Fi 配置持久化**（NVS），断电重启自动连接；**复位键**（GPIO9 长按 3 秒清配置）
+- 💡 **咖啡台 10 路 LED 独立开关**（GPIO，状态仅内存、掉电全灭）
+- 🔌 **Modbus TCP 从站**（端口 502）：LED 以保持寄存器暴露给上位机（PLC/HMI/SCADA）
+- 🔗 **自定义 TCP 控制协议**（端口 9001）：客户主动连接发 JSON 指令，执行后回应答
+- 📶 **蓝牙 BLE 控制**：广播名 `CoffeeTable-LED`，App 经 BLE GATT 控制（NimBLE）
+- 🚀 **OTA 就绪**：分区表含 `ota_0`/`ota_1` 两个 app 分区，可做空中升级
+
+> 三套控制接口（TCP 9001 / Modbus 502 / BLE）命令语义一致、可并存，**均不占用串口**；UART1（GPIO5/6）预留给之后的 485 舵机。
 
 ### 🛡️ 失联兜底（AP 与 STA 不允许同时死掉）
 
-C5 为**单射频**芯片，STA 连接/扫描时 AP 信号会变弱；且部分板子（如本项目的）没有复位按钮，因此固件保证**任何时刻 AP 和 STA 至少有一个可用**：
+C5 为**单射频**芯片，固件保证**任何时刻 AP 和 STA 至少一个可用**。STA 断开后**不立即**开 AP（避免频繁跳变），而是连续断开超过 N 秒（默认 15 秒，可配，1~3600）才自动开启热点；重试耗尽后自动回退配网模式。
 
-| 状态 | AP | STA | 可达方式 |
-|---|---|---|---|
-| 配网模式 | 🟢 开 | 空闲 | 走热点 `192.168.4.1` |
-| 连接中/重试中 | 🟢 开 | 连接中 | 走热点 |
-| 已联网 + 关闭热点 | 🔴 关 | 🟢 在线 | 走路由器 |
-| 已联网 + 保持热点 | 🟢 开 | 🟢 在线 | 双通道 |
-
-**兜底规则**：STA 断开后**不立即**开 AP（避免单射频频繁跳变），而是**连续断开超过 N 秒**（默认 15 秒）才自动开启热点。N 可在配网表单"断网后开启热点兜底延迟（秒）"设置（1~3600，随配置持久化）。重试耗尽后自动回退配网模式（AP 常开）。
-
-> ⚠️ 已知限制：表单提示中的"0 = 立即开启"当前**未实现**——0 在前端/NVS 加载/运行时均被按默认 15 秒处理（详见下文"商用部署须知"）。
-
-> ⚠️ 唯一残留窗口：路由器"静默死亡"时（信号还在但路由中断），驱动需等 beacon 超时（约 10~60 秒）才触发断开，之后 AP 兜底才启动。属 WiFi 协议固有延迟。
+> ⚠️ 已知：表单"0 = 立即开启"当前按默认 15 秒处理；路由器"静默死亡"时驱动需等 beacon 超时（约 10~60s）才触发兜底。属协议固有延迟。
 
 ## 环境要求
 
 - ESP32-C5 开发板（**N16R8：16MB flash / 8MB PSRAM**）
-- **ESP-IDF v5.4+**（本工程基于 v6.0.1 编译验证；v5.4 为 C5 技术预览支持）
-- VS Code + [ESP-IDF 扩展](https://marketplace.visualstudio.com/items?itemName=espressif.esp-idf-extension)（推荐）
+- **ESP-IDF v6.0.1**（本工程按 v6.0.1 API 编译验证）
+- VS Code + ESP-IDF 扩展（推荐）
 
 ## 目录结构
 
 ```
 coffe_mcu/
 ├── CMakeLists.txt
-├── CHANGELOG.md             # 版本记录（修复/功能明细）
-├── sdkconfig.defaults       # 目标/闪存大小等默认配置
-├── .vscode/settings.json    # 项目级 IDF 路径（不影响全局设置）
-├── tools/                   # 串口读取/监控脚本
-└── main/
-    ├── CMakeLists.txt
-    ├── Kconfig.projbuild    # 配网相关 menuconfig 选项
-    ├── idf_component.yml    # 托管组件依赖（cjson/led_strip/mdns）
-    ├── app_main.c           # 入口：初始化 + 启动流程
-    ├── config_store.[ch]    # NVS 配置持久化（配网）
-    ├── wifi_mgr.[ch]        # Wi-Fi 状态机（AP/STA/扫描/静态IP/回退/兜底）
-    ├── web_server.[ch]      # HTTP 配网服务器（REST API）
-    ├── led_control.[ch]     # 咖啡台 10 路 LED 开关（GPIO，状态仅内存）
-    ├── led_cmd.[ch]         # LED JSON 命令分发（TCP/BLE 共用）
-    ├── tcp_ctrl.[ch]        # 自定义 TCP LED 控制协议（端口 9001，JSON）
-    ├── ble_led.[ch]         # BLE GATT 控制服务（NimBLE，App 控制）
-    ├── modbus_slave.[ch]    # Modbus TCP 从站（端口 502，LED 保持寄存器）
-    ├── rgb_led.[ch]         # WS2812 状态指示灯
-    └── www/index.html       # 内嵌配网网页（EMBED_FILES）
+├── CHANGELOG.md
+├── partitions.csv            # 分区表（ota_0/ota_1 两个 app 分区）
+├── sdkconfig.defaults        # 目标/闪存/BT/自定义分区表默认配置
+├── main/
+│   ├── app_main.c            # 入口：初始化 WiFi/Web/LED/TCP/BLE/Modbus
+│   ├── config_store.[ch]     # NVS 配网配置
+│   ├── wifi_mgr.[ch]         # Wi-Fi 状态机（AP/STA/扫描/静态IP/回退/兜底）
+│   ├── web_server.[ch]       # HTTP 配网 + REST（/api/...）
+│   ├── led_control.[ch]      # 10 路 LED（GPIO，状态仅内存）
+│   ├── led_cmd.[ch]          # LED JSON 命令分发（TCP/BLE 共用）
+│   ├── tcp_ctrl.[ch]         # 自定义 TCP 控制协议（9001）
+│   ├── ble_led.[ch]          # BLE GATT 控制（NimBLE）
+│   ├── modbus_slave.[ch]     # Modbus TCP 从站（502）
+│   ├── rgb_led.[ch]          # WS2812 状态灯
+│   └── www/index.html        # 内嵌网页
+└── docs/                     # 对外协议/接口文档（含 PDF）
 ```
 
 ## 编译与烧录
 
-### 方式一：VS Code（推荐）
-
-1. VS Code 打开本工程文件夹（`File > Open Folder`）
-2. 确认左下角显示目标芯片 **ESP32-C5**
-3. 点击底部状态栏 **Build**（或 `Ctrl+E B`）编译
-4. 插上开发板，点击 **Flash**（或 `Ctrl+E F`）烧录
-5. 点击 **Monitor**（或 `Ctrl+E M`）查看串口日志
-
-> 若未识别目标芯片，执行 `Ctrl+Shift+P` → `ESP-IDF: Set Espressif Device Target` → 选择 `esp32c5`。
-
-### 方式二：命令行
-
+**命令行**（本机需注意中英文路径，构建用 ASCII 路径镜像，见下）：
 ```bash
-. ~/.espressif/v6.0.1/esp-idf/export.sh        # 按你的 IDF 路径调整
-cd esp32c5_web_provision
+# 本机构建提示：coffe_mcu 所在路径含中文，请先 copy 到 ASCII 路径再 build
 idf.py set-target esp32c5
 idf.py build
-idf.py -p /dev/cu.usbmodem* flash monitor      # macOS 串口设备名
+idf.py -p /dev/cu.usbmodem* flash monitor
 ```
+
+> 🔧 **本机（含中文工作区路径）构建**：把工程 copy 到 `/tmp/coffe-mcu-build`（`main/certs`、`build`、`sdkconfig` 排除），在该目录 `idf.py build`（IDF 工具链对非 ASCII 路径会失败：`cannot read spec file '...picolibc.specs'`）。
+
+烧录时使用项目自带分区表（`partitions.csv`），会自动写入 `ota_0` 并设置 otadata。
 
 ## 使用流程
 
-**首次使用（配网）：**
+1. 上电 → 日志出现 `SoftAP ssid=ESP32C5-XXXXXXXX`
+2. 手机连热点 `ESP32C5-XXXXXXXX` → 访问 `http://192.168.4.1` 配网
+3. 保存并连接后，网页 / TCP(9001) / Modbus(502) / BLE 均可控制 10 路 LED
 
-1. 给设备上电，等待日志出现 `SoftAP ssid=ESP32C5-XXXXXXXX`（MAC 后缀，每台唯一）
-2. 手机/电脑连接 Wi-Fi 热点 **`ESP32C5-XXXXXXXX`**（MAC 后缀，每台设备唯一）（默认开放网络；如需密码见下文配置）
-3. 浏览器访问 **`http://192.168.4.1`**，打开配网页面
-4. 点击 **刷新** 扫描 Wi-Fi → 下拉选择你的路由器 SSID（或手动输入）
-5. 输入密码；按需选择 **静态 IP** 并填写 IP/网关等；按需勾选 **连接成功后关闭热点**
-6. 点击 **保存并连接**，等待状态变为"已连接"
+## 控制接口速览
 
-**再次使用：** 上电后自动按已保存配置连接。若勾选了关闭热点，如需重新配网：
-
-- 长按开发板 **BOOT 键（GPIO9）3 秒** 清除配置重启，或
-- 烧录前 `idf.py erase-flash` 清空
-
-## 配置项（menuconfig / sdkconfig.defaults）
-
-| 配置 | 默认值 | 说明 |
+| 接口 | 地址/端口 | 说明 |
 |---|---|---|
-| `CONFIG_PROV_AP_SSID_PREFIX` | `ESP32C5` | 热点名前缀，实际为 `<前缀>-<芯片MAC后N字节>`，见 `CONFIG_PROV_AP_SSID_MAC_BYTES` |
-| `CONFIG_PROV_AP_PASSWORD` | 空 | 热点密码，留空=开放网络；设置需 ≥8 位 |
-| `CONFIG_PROV_AP_CHANNEL` | 1 | 热点 2.4G 信道 |
-| `CONFIG_PROV_CONNECT_RETRY_MAX` | 5 | STA 失败重试次数，超过后回到配网模式 |
-| `CONFIG_PROV_STA_TIMEOUT_MS` | 20000 | 单次连接超时（毫秒） |
-| `CONFIG_PROV_RESET_GPIO` | 9 | 复位配网按键 GPIO（-1 禁用） |
-| `CONFIG_ESPTOOLPY_FLASHSIZE_16MB` | y | 闪存 16MB（N16R8 板） |
+| Web 配网 + REST | `http://<设备IP>:80` | `/api/status`、`/api/leds`、`/api/led`、配网接口 |
+| 自定义 TCP | `:9001` | JSON 命令：`ping/led_set/led_set_all/led_set_batch/led_status` |
+| Modbus TCP 从站 | `:502` | 保持寄存器 `0x0000..0x0009` = CH1..CH10（`0`=灭/`1`=亮），FC `0x03/0x06/0x10` |
+| 蓝牙 BLE | 广播 `CoffeeTable-LED` | GATT 服务 `0xFFE0`，CMD(FFE1 写)/RESP(FFE2 通知)/STA(FFE3 读) |
 
-## REST API
+> 客户可用的**协议文档**：
+> - TCP：`docs/2026-09-15_LED控制TCP协议_v1.0.1.md` / `.pdf`
+> - BLE：`docs/2026-09-15_LED_BLE控制接口_v1.0.md` / `.pdf`
 
-| 接口 | 方法 | 说明 |
-|---|---|---|
-| `/` | GET | 配网页面 |
-| `/api/status` | GET | `{state: config/connecting/connected, ssid, ip, gateway, netmask, dns, rssi, ap_on, ap_ssid, ap_clients, wifi_mode, version}` |
-| `/api/scan` | GET | 触发/查询双频扫描，返回网络列表（仅配网模式可用） |
-| `/api/config` | POST | 提交 `{ssid, password, ip_mode, ip, netmask, gateway, dns, ap_off, ap_fallback_delay}` |
-| `/api/reset` | POST | 清除已保存配置并回到配网模式 |
-| `/api/disconnect` | POST | 断开 STA 进入配网模式（保留已保存配置，重启后按原配置联网） |
-| `/api/ap` | POST | `{ap_on: true/false}` 运行时开关热点（仅已联网时允许关闭） |
-| `/api/leds` | GET | `[{channel, on}, …]` 返回 10 路 LED 状态 |
-| `/api/led` | POST | `{channel:1..10, on:true/false}` 控制单路 LED |
+## 咖啡台 LED 控制（内部细节）
 
-## Modbus TCP 从站（端口 502）
-
-coffe_mcu **自身就是一个 Modbus TCP 从站（服务器）**：上电即监听 **TCP 502**（网络协议，**不占用任何串口**），把 10 路 LED 以**保持寄存器**暴露给上位机（PLC / HMI / SCADA）。
-
-- **寄存器映射**：地址 `0x0000 .. 0x0009` = 灯片 **CH1 .. CH10**，值 `0`=灭、`1`=亮
-- **支持功能码**：`0x03` 读保持寄存器 / `0x06` 写单个寄存器 / `0x10` 写多个寄存器
-- 越界地址返回异常码 `0x02`（非法数据地址）；非法值返回 `0x03`
-- 单元号（unit id）不区分，任意可用
-- 支持并发连接（最多 4 个客户端）
-
-> 上位机示例：写寄存器 `0x0000`=1 → 点亮灯片 CH1；读 `0x0000..0x0004` → 获取前 5 路状态。
-> 常用工具：`mbpoll`、`Modbus Poll`、`pymodbus`。
-
-## 自定义 TCP 控制协议（端口 9001）
-
-对外给客户/上位机用的**自定义接口**：客户作为 **TCP 客户端** `connect <设备IP>:9001`，按 **JSON 协议**发命令，设备**执行完毕后回一个应答**。
-
-- **帧格式**：每条命令 = 一行 JSON + `\n`；应答同样一行 JSON + `\n`
-- **命令**：`ping` / `led_set` / `led_set_all` / `led_set_batch` / `led_status`
-- 支持最大 4 个并发连接；应答带请求的 `seq` 用于匹配
-
-**完整协议文档**：[`docs/2026-09-15_LED控制TCP协议_v1.0.md`](docs/2026-09-15_LED控制TCP协议_v1.0.md)
-
-快速示例（`nc`/`pymodbus` 类比）：
-```bash
-# 点亮 CH3
-printf '{"seq":1,"cmd":"led_set","ch":3,"on":true}\n' | nc <设备IP> 9001
-# 应答：{"seq":1,"ok":true,"cmd":"led_set","data":{"ch":3,"on":true}}
-```
-
-> ⚠️ 与 Modbus 从站（502）**可同时监听**，都只占网络端口、不占串口。
-
-## 咖啡台 LED 控制
-
-配网页面新增 **☕ 咖啡台 LED 控制** 卡片，点击 10 个按钮分别控制 10 片灯片的 亮/灭（通过 **NPN/漏极输出** 的低边开关板，高电平（GPIO 输出低）拉低 12V LED 负载地）。
-
-- **通道 → GPIO 映射**（`led_control.c`）：CH1..CH10 = `GPIO 0,1,4,8,13,14,16,17,23,24`
-- **状态仅内存、掉电全灭**：LED 状态不写入 NVS/Flash（避免高频切换损耗 Flash），重启后所有灯恢复为灭
+- **通道 → GPIO**（`led_control.c`）：CH1..CH10 = `GPIO 0,1,4,8,13,14,16,17,23,24`
+- **状态仅内存、掉电全灭**：不写 NVS（避免高频切换损耗 Flash）
 - **高有效**：`ACTIVE_LOW=0`（GPIO 置 1 = LED 亮）
+- **开关板**：NPN/漏极（低边）输出，输入 3.3V，高电平拉低 12V LED 负载地
+- **供电**：ESP32 用 3.3V（板载 5V USB 亦可）；12V LED 单独供电，两者**只共地**，勿让 12V 碰 ESP32
 
-> ⚠️ 请务必先确认上述 GPIO 在您的 N16R8 板上已引出且空闲，避开：`GPIO27`（RGB）、`GPIO9`（复位）、`GPIO11/12`（串口控制台）、`GPIO15`（PSRAM 占用）、`GPIO19/20`（USB）、Strapping（`2,3,7,25,26,27,28`）。`GPIO5/6` 已**预留给未来的 485 舵机总线**（本次未用）。
+> ⚠️ 接板前请对照 N16R8 丝印确认 GPIO 可用，避开 `GPIO27`(RGB)、`GPIO9`(复位)、`GPIO11/12`(串口)、`GPIO15`(PSRAM)、`GPIO19/20`(USB)、Strapping(`2,3,7,25,26,27,28`)。`GPIO5/6` 预留给 485 舵机。
 
-## v1.2.2 可靠性修复详情（2026-08-22，代码审查）
+## 分区表（OTA）
 
-商用前全量代码审查发现并修复 4 个高优先级缺陷，均与**长期运行稳定性**相关（内存/任务泄漏、状态机计数错误）。以下为逐项明细，供评审与回归测试对照。
+自定义 `partitions.csv`：**`ota_0` / `ota_1` 各 7.5MB**，+`otadata`/`nvs`/`phy_init`。16MB flash，app 分区充足（当前固件 ≈1.4MB，余量 ~80%）。
 
-### 修复 1：STA 连接超时重试计数双计（`wifi_mgr.c`）
+- 支持 **OTA 空中升级**（esp_https_ota / 后续接入）；升级失败可自动回滚到另一分区。
+- 当前固件**尚未内置 OTA 业务流程**，仅**分区布局就绪**；接入 OTA 时再用 `esp_ota_mark_app_valid_cancel_rollback`。
 
-| 项 | 内容 |
-|---|---|
-| 现象 | 路由器不可达/连接卡住时，配置的 5 次重试（`CONFIG_PROV_CONNECT_RETRY_MAX`）实际 2~3 次即耗尽，设备过早放弃并进入配网模式 |
-| 根因 | 单次连接超时（20 s）路径先 `s_retry_count++`，随后调用 `esp_wifi_disconnect()` 清理挂起连接；该调用**必然**产生 `WIFI_EVENT_STA_DISCONNECTED` 事件，而事件处理器内会再次 `s_retry_count++`——一次超时被计两次。另：该路径中紧随 disconnect 的 `esp_wifi_connect()` 与驱动内尚未完成的断开操作竞争，基本必然返回 `ESP_ERR_WIFI_STATE` 而被忽略，属无效调用 |
-| 修复 | 新增 `s_self_disconnect` 标志：超时路径置标志后仅调用 `esp_wifi_disconnect()`；事件处理器识别到标志则跳过计数（超时路径已计过），后续流程（切回 CONNECTING → 1 s 后重试 → 重连成功才重新武装超时定时器）不变。删除无效的直接 connect 调用。同时超时路径重新武装超时定时器作为**看门狗**：正常路径下事件处理器会解除它，仅在"断开事件异常丢失"的极端场景下保证状态机仍能周期推进直至回退配网模式（保留原实现的活性保证） |
-| 影响面 | 仅超时路径；密码错误等快速失败路径（一次失败计一次）行为不变 |
+## 版本
 
-### 修复 2：Web 延迟操作内存泄漏（`web_server.c`）
-
-| 项 | 内容 |
-|---|---|
-| 现象 | 每次 `POST /api/config` 泄漏约 200 B 堆 + 1 个 esp_timer 对象；`/api/reset`、`/api/disconnect` 各泄漏 1 个 esp_timer 对象。反复配网（密码输错重试是常态）持续消耗堆，长期运行最终 OOM |
-| 根因 | 配置副本 malloc 后交由一次性 esp_timer 回调使用，回调只读不释放；三个接口每次请求 `esp_timer_create` 一次性定时器，触发后不 `esp_timer_delete` |
-| 修复 | 改为**静态资源终身复用**：进入配网模式共用 1 个静态定时器（断开/重置两接口），连接用另 1 个静态定时器 + 静态 `s_pending_cfg` 缓冲（新请求覆盖旧值，语义与原来一致：总是应用最新配置）。懒创建、零分配零泄漏。顺带消除了原先以 `(void(*)(void*))` 强转无参函数做定时器回调的 C 标准未定义行为 |
-| 影响面 | `/api/config`、`/api/reset`、`/api/disconnect` 内部实现，外部行为不变 |
-
-### 修复 3：Modbus RTU 响应帧泄漏（`modbus_gw.c`）
-
-| 项 | 内容 |
-|---|---|
-| 现象 | 网关长跑（尤其从站响应慢、频繁超时）堆缓慢下降，最终 OOM |
-| 根因 | 两处：① UART 接收任务将完整 RTU 帧入队时用非阻塞 `xQueueSend`，队列（深度 4）满时 malloc 的帧缓冲被丢弃且不 `free`；② 每次事务开头 `xQueueReset` 清队列，滞留帧的指针被直接丢弃——从站恰好在 1 s 超时后才应答的帧会滞留队列，被下一次事务的 Reset 丢掉（每帧最大 262 B，无界累积） |
-| 修复 | 入队失败立即 `free`；事务开头改为循环出队逐个 `free` |
-| 影响面 | 仅内存管理，协议行为不变 |
-
-### 修复 4：网关停止任务泄漏 + fd 复用误关新连接（`modbus_gw.c`）
-
-| 项 | 内容 |
-|---|---|
-| 现象 | 每次网页修改网关配置（`POST /api/gw` 触发重配置）最多泄漏 2 个监听 + 4 个客户任务；更严重的是滞留客户任务退出时按 **fd 数值**匹配槽位清理，而 lwIP 会复用 fd 号——重启后的**新连接可能被旧任务的 `close()` 误杀** |
-| 根因 | 所有 socket 阻塞式且无超时；lwIP 下从另一任务 `close()` 一个 fd **无法唤醒**阻塞在该 fd 上 `accept()/recv()` 的任务，`gw_stop` 固定等待 1.5 s 等不到它们退出 |
-| 修复 | `gw_stop` 对监听/客户 fd 先 `shutdown(SHUT_RDWR)` 再 `close()`（shutdown 可靠唤醒阻塞调用），清客户槽位置于槽位互斥锁内；客户任务创建时携带自己的槽位下标，退出时持锁校验"槽位仍归属本 fd"才关闭，杜绝 fd 复用误伤 |
-| 附带修复 | TLS 握手失败/证书未就绪两条早退路径原先**不归还客户端槽位**（连续失败 4 次后网关拒绝所有新连接），现统一走 `client_done` 清理出口 |
-| 影响面 | 网关启停/重配置路径；数据面（MBAP↔RTU 转换）不变 |
-
-## 商用部署须知（已知限制与风险）
-
-> 本节如实记录当前版本**已确认但尚未修复**的问题。商用决策前请逐项评估；后续版本可按优先级安排。
-
-### 🔒 安全（商用前重点评估）
-
-- **所有 HTTP API 无任何鉴权**，且设备入网后 Web 服务常驻监听（路由器分配的 IP）：同网段任意设备可读取状态、**修改 Wi-Fi 配置、恢复出厂**。**自定义 TCP 控制协议（9001）与 Modbus TCP 从站（502）同理**——连上即可读写 LED，当前无令牌。
-  - 建议：部署于可信网段/独立 VLAN 或在交换机层隔离；客户端 IP 白名单仅是过滤不是防护
-  - 后续可加可配置访问令牌（token）
-- 配网凭据经 HTTP 明文传输（SoftAP 场景可接受；经路由器 LAN 访问时注意嗅探风险。coffe_mcu 无 TLS，Modbus TCP 从站同样是明文）
-
-### ⚠️ 已知中优先级问题（特定条件触发）
-
-1. **AP 兜底开启时序**（`wifi_mgr_ap_enable`）：先切 APSTA 模式再写 AP 配置，AP 会以先前被清空的配置（空 SSID）先行启动；若 `esp_wifi_set_config` 对已启动 AP 不生效（IDF 版本相关），**兜底热点可能不可见**——恰好影响"断网自救"这一兜底场景本身。属待上板验证项（见下方清单第 5 条）
-2. **兜底延迟 0 的语义矛盾**：前端提示"0 = 立即开启"，实际 0 在前端/NVS 加载/运行时三层均被按默认 15 处理，该功能暂未实现（本 README 兜底规则一节已同步更正）
-3. **超长凭据静默截断**：32 字符 SSID、64 字符 WPA 密码通过校验后被截断为 31/63 字符使用，导致连接失败但无明确提示。运维侧应避免此类超长输入
-4. **重试定时器路径无兜底**：`on_conn_retry` 中 `esp_wifi_connect()` 若返回错误（罕见，驱动内部状态繁忙），当前无定时器接续，状态机可能停留在 CONNECTING；可通过网页重新保存配置恢复
-5. **跨任务共享状态无互斥保护**（重试计数/配置等在 esp_timer、事件循环、httpd 多个上下文读写），极端时序下存在竞态。商用长跑前建议做压力测试
-
-### ℹ️ 已知低优先级问题
-
-- 前端"断开 Wi-Fi"提示硬编码了单台设备的热点名（非本机的设备会显示错误热点名）；服务端校验失败的具体原因（如 "ssid required"）网页上显示不出来；`recv_body` 对慢速/恶意客户端无限等待可占住整个 HTTP 服务；网关端口未禁止设为 80（会与配网服务冲突且保存时无告警）
-
-### ✅ 待上板验证清单（烧录 v1.2.2 后逐项确认）
-
-1. **重试计数**：关闭路由器（保持设备可见其信号）或断电，观察串口日志 `connect timeout (n/5)` 与 `retry connect` 交替——一次超时只应计一次
-2. **Web 内存**：`for i in $(seq 1 100); do curl -s -X POST http://<设备IP>/api/config -d '{"ssid":"x"}' >/dev/null; done` 后对比 `/api/status` 前后串口堆日志（`minimum free heap` 不应持续下降）
-3. **网关内存**：断开 RS485 从站使事务全部超时，压测数千次 Modbus 请求后堆稳定
-4. **网关重配置**：网页反复（≥10 次）修改并保存网关设置，串口无异常，新 Modbus 客户端可正常连接收发
-5. **AP 兜底（重点）**：设备联网且勾选"连接成功后关闭热点"后，关闭路由器电源等待 15 s+，确认热点以正确 SSID（`ESP32C5-XXXXXXXX`）出现且可访问 `192.168.4.1`——此为已知问题 1 的实测项
-
-## 版本管理（git tag）
-
-当前已发布至 **v1.2.4**（含网关停止竞态、AP 名称拼接越界、Wi-Fi 自断开标志残留及配网页面热点提示修复），固件内置版本号（网页状态面板 / `/api/status` / 串口日志 `App version:` 均可查看）。
-
-**发布新版本**（改完代码后）：
+固件版本号由 `project(coffe_mcu VERSION ...)` 定义，`/api/status` 的 `version` 与开机日志 `App version:` 同步。发布记录见 `CHANGELOG.md`。常用 git 回退/打 tag：
 
 ```bash
-git add -A
-git commit -m "v1.2.4: 修复网关停止竞态和 Wi-Fi 状态清理"
-git tag -a v1.2.4 -m "v1.2.4"
-idf.py build && idf.py -p /dev/cu.usbserial-5C310834821 flash
+git log --oneline                # 查看可回滚提交
+git reset --hard <commit>        # 本地回退
+git push origin main --force     # 需同步远程时（会重写历史，慎重）
 ```
 
-**回退到旧版本**（出问题时一键回到上个可用版本）：
+## 已知限制（内部）
 
-```bash
-git checkout v1.2.1
-idf.py build && idf.py -p /dev/cu.usbserial-5C310834821 flash
-git checkout main   # 回退完切回最新代码继续开发
-```
-
-> 提示：版本号由 `git describe` 自动生成（即 `PROJECT_VER`）；`build/`、`sdkconfig` 等已加入 `.gitignore` 不入库。若需**运行时自动回退**（OTA 升级失败自动回滚旧固件），可后续基于 IDF 的 OTA + `esp_ota_mark_app_valid_cancel_rollback` 机制扩展。
-
-## 常见问题
-
-- **连不上热点**：确认热点名是 `ESP32C5-XXXXXXXX`（MAC 后缀，日志中会打印）；若设了密码，确认密码 ≥8 位
-- **扫描不到 5G 网络**：确认路由器 5G 开启且设备处于 5G 覆盖范围（5G 穿墙弱）
-- **配网后想换网络**：长按 BOOT 3 秒，或连接热点（若未关闭）重新配置
-- **IDF 版本兼容性**：本工程按 IDF v6.0.1 API 编写（`ESP_ERR_WIFI_CONN`、`esp_system.h`、cjson 托管组件等）；如用 v5.4/v5.5 请留意 API 差异
+- **所有接口无鉴权/令牌**：HTTP、TCP 9001、Modbus 502 均可被同网段设备读写；BLE 无配对免。请部署于可信网段/VLAN，或量产前启用 v1.1 令牌（协议文档第 7 节）。
+- 配网/状态接口走 HTTP 明文；无 TLS。
+- AP 兜底时序、重试计数等细节见 `CHANGELOG.md` 历史说明（继承自基座项目的可靠性修复）。

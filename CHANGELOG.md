@@ -18,6 +18,8 @@
 - **移除 RTU↔TCP 网关**（原 `modbus_gw`）：本项目无 Modbus RTU 从站，不再走 UART 桥接；**UART1（GPIO5/6）预留给未来的 485 舵机总线**。
 - **移除 TLS**：本工程用不到，删除 `mbedtls` 依赖、`main/certs/`（证书/私钥）、`GET /api/cert` 及前端 TLS 配置项。
 - **闪存大小**：`CONFIG_ESPTOOLPY_FLASHSIZE_16MB`（N16R8）。
+- **OTA 分区就绪**：改用自定义 `partitions.csv`，`ota_0`/`ota_1` 各 7.5MB（支持后续 OTA 升级）。
+- **README 重写**：贴合当前 coffe_mcu（多接口、BLE、OTA、分区），移除基座项目过时内容。
 - **兼容 IDF v6**：`wifi_sta_config_t` 已无 `ssid_len`，改为空结尾字符串写入。
 - 项目名改为 `coffe_mcu`；HTTPD 路由上限提到 16。
 
