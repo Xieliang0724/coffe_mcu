@@ -13,6 +13,7 @@
 
 #include "driver/gpio.h"
 #include "esp_log.h"
+#include "esp_ota_ops.h"
 #include "esp_system.h"   /* esp_restart() (v6.0: 由 esp_restart.h 迁移至此) */
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -145,4 +146,12 @@ void app_main(void)
 #endif
 
     wifi_mgr_start();   /* 有配置 -> 连接；无配置 -> SoftAP 配网 */
+
+    /* OTA 启动回滚保护：本固件已完整初始化并正常运行到这里，
+     * 标记为“应用有效”，取消 bootloader 的回滚计数。
+     * 若新固件启动后未走到这里即崩溃，下次开机 bootloader 自动切回旧分区。 */
+    esp_err_t ota_ret = esp_ota_mark_app_valid_cancel_rollback();
+    if (ota_ret != ESP_OK) {
+        ESP_LOGW(TAG, "ota mark valid failed: %s", esp_err_to_name(ota_ret));
+    }
 }

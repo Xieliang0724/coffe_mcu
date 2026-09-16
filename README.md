@@ -100,8 +100,9 @@ idf.py -p /dev/cu.usbmodem* flash monitor
 
 自定义 `partitions.csv`：**`ota_0` / `ota_1` 各 7.5MB**，+`otadata`/`nvs`/`phy_init`。16MB flash，app 分区充足（当前固件 ≈1.4MB，余量 ~81%）。
 
-- **已实现网页 OTA**：网页「🛠 固件升级」上传 `.bin` → `POST /api/ota` 写入另一分区 → 校验 → 切换启动 → 重启；**失败自动回滚**到旧分区（`esp_ota_abort`，启动分区不变）。
-- 也可命令行 OTA：`idf.py -p <PORT> ota`（生产可用 `esp_ota` 流程或接入 HTTPS/签名以增强安全）。
+- **已实现网页 OTA**：网页「🛠 固件升级」上传 `.bin` → `POST /api/ota` 写入另一分区 → 校验 → 切换启动 → 重启；**写入失败自动回滚**到旧分区（`esp_ota_abort`，启动分区不变）。
+- **启动失败自动回滚（双保险）**：已启用 bootloader 回滚（`CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y`），固件启动成功后调用 `esp_ota_mark_app_valid_cancel_rollback()`。新固件若启动即崩溃，下次开机自动切回旧分区，防砖。
+- 也可命令行 OTA：`idf.py -p <PORT> ota`。
 
 ## 版本
 
