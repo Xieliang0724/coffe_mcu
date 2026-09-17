@@ -1,5 +1,16 @@
 # Changelog
 
+## [v1.3.0] - 2026-09-15
+
+### ⚙️ 硬件适配（flash 16MB → 8MB）
+
+- **目标 flash 改为 8MB**：`sdkconfig.defaults` 改用 `CONFIG_ESPTOOLPY_FLASHSIZE_8MB`（原 16MB）。
+- **分区表缩小** `partitions.csv`：`ota_0`/`ota_1` 由各 7.5MB 改为**各 3.5MB**（0x380000），适配 8MB flash，仍支持 OTA 双分区轮流升级；ota_1 结束地址 0x720000 < 8MB，无越界。
+- **固件余量**：当前固件 ≈1.4MB，3.5MB 分区剩余约 60%，充足。
+- 文档同步：README 目标芯片/分区描述、硬件注释改为 8MB 表述。
+
+---
+
 ## [v1.2.1] - 2026-09-15
 
 ### 🐛 修复（代码审核）

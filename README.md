@@ -1,6 +1,6 @@
 # coffe_mcu — 咖啡台智能终端固件
 
-基于 `esp32c5_web_provision` 二次开发的**咖啡台智能终端**固件，面向客户提供多接口控制 10 路 LED；已**移除 TLS**（本项目不需要），并升级为 **支持 OTA** 的分区布局。目标芯片 **ESP32-C5（N16R8：16MB flash / 8MB PSRAM）**。
+基于 `esp32c5_web_provision` 二次开发的**咖啡台智能终端**固件，面向客户提供多接口控制 10 路 LED；已**移除 TLS**（本项目不需要），并升级为 **支持 OTA** 的分区布局。目标芯片 **ESP32-C5（8MB flash）**。
 
 > 对外客户协议文档（去 MCU 细节）见 `docs/`；本 README 为内部/集成商使用，保留 MCU 细节。
 
@@ -26,7 +26,7 @@ C5 为**单射频**芯片，固件保证**任何时刻 AP 和 STA 至少一个�
 
 ## 环境要求
 
-- ESP32-C5 开发板（**N16R8：16MB flash / 8MB PSRAM**）
+- ESP32-C5 开发板（**8MB flash**）
 - **ESP-IDF v6.0.1**（本工程按 v6.0.1 API 编译验证）
 - VS Code + ESP-IDF 扩展（推荐）
 
@@ -98,11 +98,11 @@ idf.py -p /dev/cu.usbmodem* flash monitor
 - **开关板**：NPN/漏极（低边）输出，输入 3.3V，高电平拉低 12V LED 负载地
 - **供电**：ESP32 用 3.3V（板载 5V USB 亦可）；12V LED 单独供电，两者**只共地**，勿让 12V 碰 ESP32
 
-> ⚠️ 接板前请对照 N16R8 丝印确认 GPIO 可用，避开 `GPIO27`(RGB)、`GPIO9`(复位)、`GPIO11/12`(串口)、`GPIO15`(PSRAM)、`GPIO19/20`(USB)、Strapping(`2,3,7,25,26,27,28`)。`GPIO5/6` 预留给 485 舵机。
+> ⚠️ 接板前请对照 ESP32-C5 开发板丝印确认 GPIO 可用，避开 `GPIO27`(RGB)、`GPIO9`(复位)、`GPIO11/12`(串口)、`GPIO19/20`(USB)、Strapping(`2,3,7,25,26,27,28`)。若模块带 PSRAM 还需避开 `GPIO15`（当前固件已默认不用它）。`GPIO5/6` 预留给 485 舵机。
 
 ## 分区表（OTA）
 
-自定义 `partitions.csv`：**`ota_0` / `ota_1` 各 7.5MB**，+`otadata`/`nvs`/`phy_init`。16MB flash，app 分区充足（当前固件 ≈1.4MB，余量 ~81%）。
+自定义 `partitions.csv`：**`ota_0` / `ota_1` 各 3.5MB**，+`otadata`/`nvs`/`phy_init`。8MB flash，app 分区余量充足（当前固件 ≈1.4MB，剩余 ~60%）。
 
 - **已实现网页 OTA**：网页「🛠 固件升级」上传 `.bin` → `POST /api/ota` 写入另一分区 → 校验 → 切换启动 → 重启；**写入失败自动回滚**到旧分区（`esp_ota_abort`，启动分区不变）。
 - **启动失败自动回滚（双保险）**：已启用 bootloader 回滚（`CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y`），固件启动成功后调用 `esp_ota_mark_app_valid_cancel_rollback()`。新固件若启动即崩溃，下次开机自动切回旧分区，防砖。
