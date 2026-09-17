@@ -76,8 +76,8 @@ esp_err_t ota_update_handle(httpd_req_t *req)
 
     err = esp_ota_end(handle);
     if (err != ESP_OK) {
+        /* esp_ota_end 已自行收尾 handle，无需再 abort */
         ESP_LOGE(TAG, "ota_end (image invalid?) failed: %s", esp_err_to_name(err));
-        esp_ota_abort(handle);
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "invalid image");
         return err;
     }
@@ -86,7 +86,6 @@ esp_err_t ota_update_handle(httpd_req_t *req)
     err = esp_ota_set_boot_partition(update);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "set_boot_partition failed: %s", esp_err_to_name(err));
-        esp_ota_abort(handle);
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "set boot failed");
         return err;
     }

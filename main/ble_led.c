@@ -159,10 +159,13 @@ static int gap_event(struct ble_gap_event *event, void *arg)
         break;
 
     case BLE_GAP_EVENT_SUBSCRIBE:
-        if (event->subscribe.attr_handle == s_resp_attr) {
-            s_resp_attr = event->subscribe.attr_handle;
+        /* RESP 特征被订阅/取消订阅：记录或清理通知目标连接 */
+        if (event->subscribe.cur_notify || event->subscribe.cur_indicate) {
             s_resp_conn = event->subscribe.conn_handle;
             ESP_LOGI(TAG, "RESP subscribed conn=%u", s_resp_conn);
+        } else if (event->subscribe.conn_handle == s_resp_conn) {
+            s_resp_conn = BLE_HS_CONN_HANDLE_NONE;
+            ESP_LOGI(TAG, "RESP unsubscribed");
         }
         break;
 
@@ -204,7 +207,7 @@ static void start_advertising(void)
     adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
     adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
 
-    rc = ble_gap_adv_start(s_own_addr_type, NULL, BLE_GAP_ADV_ITVL_MS(1000),
+    rc = ble_gap_adv_start(s_own_addr_type, NULL, BLE_HS_FOREVER,
                            &adv_params, gap_event, NULL);
     if (rc != 0) {
         ESP_LOGE(TAG, "adv start failed: %d", rc);
@@ -279,8 +282,11 @@ esp_err_t ble_led_init(void)
         s_resp_attr = 0;
     }
 
-    nimble_port_freertos_init(nimble_host_task);
+    /* 回调必须在 host 任务启动前挂好，否则 sync 可能错过 */
     ble_hs_cfg.reset_cb = on_sync;
+
+    nimble_port_freertos_init(nimble_host_task);
+
     ESP_LOGI(TAG, "BLE GATT started, service 0xFFE0, name=%s", name);
     return ESP_OK;
 }

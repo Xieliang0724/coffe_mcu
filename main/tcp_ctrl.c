@@ -101,6 +101,7 @@ static void client_task(void *arg)
 
     char buf[MAX_LINE];
     size_t len = 0;
+    bool skip_nl = false;   /* 超长行丢弃模式：直到下一个 '\n' */
 
     while (s_running) {
         char tmp[MAX_LINE];
@@ -117,6 +118,13 @@ static void client_task(void *arg)
         }
         for (int i = 0; i < n; i++) {
             char c = tmp[i];
+            if (skip_nl) {
+                /* 超长行剩余字符直接丢弃，到行尾为止 */
+                if (c == '\n') {
+                    skip_nl = false;
+                }
+                continue;
+            }
             if (c == '\n') {
                 buf[len] = '\0';
                 if (len > 0) {
@@ -126,8 +134,7 @@ static void client_task(void *arg)
             } else if (len < sizeof(buf) - 1) {
                 buf[len++] = c;
             } else {
-                /* 单条超长：丢弃本行并回错误 */
-                buf[len] = '\0';
+                /* 单条超长：本行回一个 INVALID_JSON，并丢弃该行剩余字符 */
                 cJSON *resp = cJSON_CreateObject();
                 cJSON_AddBoolToObject(resp, "ok", false);
                 cJSON_AddStringToObject(resp, "err", "INVALID_JSON");
@@ -139,6 +146,7 @@ static void client_task(void *arg)
                 }
                 cJSON_Delete(resp);
                 len = 0;
+                skip_nl = true;
             }
         }
     }
