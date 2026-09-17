@@ -3,5 +3,6 @@
     // 钉住 IDF v6.0.1 路径，确保 ESP-IDF 扩展使用正确的工具链。
     "idf.espIdfPath": "/Users/alvin.xie/.espressif/v6.0.1/esp-idf",
     "idf.toolsPath": "/Users/alvin.xie/.espressif",
+    "idf.adapterTargetName": "esp32c5",
     "idf.flashType": "UART"
 }
