@@ -16,7 +16,7 @@
 - 📶 **蓝牙 BLE 控制**：广播名 `CoffeeTable-LED`，App 经 BLE GATT 控制（NimBLE）
 - 🚀 **OTA 就绪**：分区表含 `ota_0`/`ota_1` 两个 app 分区，可做空中升级
 
-> 三套控制接口（TCP 9001 / Modbus 502 / BLE）命令语义一致、可并存，**均不占用串口**；UART1（GPIO5/6）预留给之后的 485 舵机。
+> 三套控制接口（TCP 9001 / Modbus 502 / BLE）命令语义一致、可并存，**均不占用串口**；`GPIO5` 暂预留 485（`GPIO6` 已用作 LED CH8）。
 
 ### 🛡️ 失联兜底（AP 与 STA 不允许同时死掉）
 
@@ -92,13 +92,13 @@ idf.py -p /dev/cu.usbmodem* flash monitor
 
 ## 咖啡台 LED 控制（内部细节）
 
-- **通道 → GPIO**（`led_control.c`）：CH1..CH10 = `GPIO 0,1,4,8,13,14,16,17,23,24`
+- **通道 → GPIO**（`led_control.c`）：CH1..CH10 = `GPIO 0,1,4,8,13,14,10,6,23,24`（取自 E101-C5WN8-PS 开发板 datasheet，避开 C5 上不存在的 16/17）
 - **状态仅内存、掉电全灭**：不写 NVS（避免高频切换损耗 Flash）
 - **高有效**：`ACTIVE_LOW=0`（GPIO 置 1 = LED 亮）
 - **开关板**：NPN/漏极（低边）输出，输入 3.3V，高电平拉低 12V LED 负载地
 - **供电**：ESP32 用 3.3V（板载 5V USB 亦可）；12V LED 单独供电，两者**只共地**，勿让 12V 碰 ESP32
 
-> ⚠️ 接板前请对照 ESP32-C5 开发板丝印确认 GPIO 可用，避开 `GPIO27`(RGB)、`GPIO9`(复位)、`GPIO11/12`(串口)、`GPIO19/20`(USB)、Strapping(`2,3,7,25,26,27,28`)。若模块带 PSRAM 还需避开 `GPIO15`（当前固件已默认不用它）。`GPIO5/6` 预留给 485 舵机。
+> ⚠️ **关键**：ESP32-C5 上 `GPIO16/17/18/19/20/21/22` 不存在（E101-C5WN8 datasheet 排针表未引出），配置会导致 `CPU_LOCKUP` 崩溃，**切勿使用**。可用 GPIO 见 datasheet 管脚表（如 0,1,2,3,4,5,6,7,8,9,10,13,14,23,24,25,26,28）。本项目已避开，且 `GPIO27`(RGB)、`GPIO9`(复位)、`GPIO11/12`(串口)、`GPIO15`(PSRAM，若带) 已占用。`GPIO5` 暂预留 485，`GPIO6` 现作 LED CH8。
 
 ## 分区表（OTA）
 

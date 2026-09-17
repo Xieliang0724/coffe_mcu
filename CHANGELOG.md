@@ -1,5 +1,18 @@
 # Changelog
 
+## [v1.3.1] - 2026-09-15
+
+### 🐛 修复（板上实测，8MB 开发板）
+
+- **修复 CPU_LOCKUP 崩溃**：LED 引脚 `GPIO16/GPIO17` 在 ESP32-C5 上**不存在/未引出**，配置它们触发 `rst:0x1a (CPU_LOCKUP)` 反复重启。已改用 E101-C5WN8-PS 开发板 datasheet 确认存在的引脚：`GPIO16→GPIO10`、`GPIO17→GPIO6`，现 10 路为 `0,1,4,8,13,14,10,6,23,24`。板子实测不再崩溃、完整启动。
+- **修复 BLE Notify**：`ble_gatts_find_chr` 过早调用（host 未同步）导致 `find RESP chr failed`（notify 收不到应答）。已移到 `on_sync`（host 同步后）解析 RESP 句柄，BLE 通知恢复正常。
+
+### 🔧 变更
+
+- 固件版本号升至 **v1.3.1**。
+
+---
+
 ## [v1.3.0] - 2026-09-15
 
 ### ⚙️ 硬件适配（flash 16MB → 8MB）

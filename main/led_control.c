@@ -1,14 +1,14 @@
 /*
  * led_control.c - 无界coffee · 10 路 LED 开关控制实现
  *
- * 引脚：见 s_pins[]，默认按 ESP32-C5 避开所有冲突脚：
- *   - Strapping : 2,3,7,25,26,27,28
- *   - PSRAM     : 15（模块若带 PSRAM 会被占用，固件默认不用它）
- *   - 项目已用  : 9(复位),27(RGB),11,12(串口),19,20(USB)
- * 故选用的 10 路：0,1,4,8,13,14,16,17,23,24
- * ⚠️ 接板前请对照你的 ESP32-C5 板丝印确认这些脚都已引出且可用。
+ * 引脚：见 s_pins[]，均取自 E101-C5WN8-PS 开发板排针引出的有效 GPIO
+ *   - 必须避开 ESP32-C5 上不存在的引脚(如 GPIO16/17/18-22)，否则 CPU_LOCKUP
+ *   - PSRAM  : 15（模组带 PSRAM 时被占用）
+ *   - 已用   : 9(复位),27(RGB),11,12(串口)
+ *   - 说明   : 现用 GPIO6 作为 CH8，原 GPIO5/6 预留的 485(UART1) 暂缓
+ * 故选用的 10 路：0,1,4,8,13,14,10,6,23,24
+ * ⚠️ 接板前请对照开发板丝印确认这些脚都已引出且可用。
  *    如需改动，直接改 s_pins[] 数组即可。
- * （UART1 GPIO5/6 已预留给 485 舵机，本模块不使用。）
  *
  * 状态模型：LED 状态**仅保存在内存**，**不写入 NVS/Flash**。
  * 设备重启（含掉电）后所有通道恢复为灭。原因：客户可能高频切换
@@ -27,6 +27,9 @@
 static const char *TAG = "led_ctrl";
 
 /* 10 路 GPIO：CH1..CH10 */
+/* 10 路 GPIO：CH1..CH10（均取自 E101-C5WN8-PS 开发板排针引出的有效 GPIO）
+ * 注意：ESP32-C5 的 GPIO16/17 等引脚不存在/未引出，接入会触发 CPU_LOCKUP，
+ * 故此处仅选用 datasheet 管脚表确认存在的引脚。 */
 static gpio_num_t s_pins[LED_CHANNEL_COUNT] = {
     GPIO_NUM_0,  // CH1
     GPIO_NUM_1,  // CH2
@@ -34,8 +37,8 @@ static gpio_num_t s_pins[LED_CHANNEL_COUNT] = {
     GPIO_NUM_8,  // CH4
     GPIO_NUM_13, // CH5
     GPIO_NUM_14, // CH6
-    GPIO_NUM_16, // CH7
-    GPIO_NUM_17, // CH8
+    GPIO_NUM_10, // CH7
+    GPIO_NUM_6,  // CH8
     GPIO_NUM_23, // CH9
     GPIO_NUM_24, // CH10
 };

@@ -239,6 +239,14 @@ static void on_sync(int reason)
         ESP_LOGE(TAG, "infer addr failed: %d", rc);
         return;
     }
+    /* host 同步完成，GATT 表此时才就绪：解析 RESP 特征值句柄用于 notify */
+    uint16_t def_handle = 0;
+    int rc2 = ble_gatts_find_chr(BLE_UUID16_DECLARE(SERVICE_UUID), BLE_UUID16_DECLARE(RESP_UUID),
+                                 &def_handle, &s_resp_attr);
+    if (rc2 != 0) {
+        ESP_LOGW(TAG, "find RESP chr failed (notify disabled): %d", rc2);
+        s_resp_attr = 0;
+    }
     start_advertising();
 }
 
@@ -271,15 +279,6 @@ esp_err_t ble_led_init(void)
     if (rc != 0) {
         ESP_LOGE(TAG, "add svcs failed: %d", rc);
         return ESP_FAIL;
-    }
-
-    /* 解析 RESP 特征值句柄（用于 notify） */
-    uint16_t def_handle = 0;
-    rc = ble_gatts_find_chr(BLE_UUID16_DECLARE(SERVICE_UUID), BLE_UUID16_DECLARE(RESP_UUID),
-                            &def_handle, &s_resp_attr);
-    if (rc != 0) {
-        ESP_LOGW(TAG, "find RESP chr failed (notify disabled): %d", rc);
-        s_resp_attr = 0;
     }
 
     /* 回调必须在 host 任务启动前挂好，否则 sync 可能错过 */
