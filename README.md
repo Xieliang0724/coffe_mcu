@@ -55,15 +55,19 @@ coffe_mcu/
 
 ## 编译与烧录
 
-**命令行**（本机需注意中英文路径，构建用 ASCII 路径镜像，见下）：
+**本机构建（工作区含中文路径，必须用 ASCII 镜像目录）**：把工程 rsync 到纯英文路径 `~/coffe-build`，在那里构建（VS Code 也直接打开这个目录即可，扩展用同一套环境）：
+
 ```bash
-# 本机构建提示：coffe_mcu 所在路径含中文，请先 copy 到 ASCII 路径再 build
-idf.py set-target esp32c5
+rsync -a --delete --exclude build --exclude sdkconfig --exclude sdkconfig.old \
+      "<工作区>/无界coffe/固件/coffe_mcu/" ~/coffe-build/
+. ~/.espressif/v6.0.1/esp-idf/export.sh
+cd ~/coffe-build
+idf.py set-target esp32c5      # 仅首次
 idf.py build
 idf.py -p /dev/cu.usbmodem* flash monitor
 ```
 
-> 🔧 **本机（含中文工作区路径）构建**：把工程 copy 到 `/tmp/coffe-mcu-build`（`main/certs`、`build`、`sdkconfig` 排除），在该目录 `idf.py build`（IDF 工具链对非 ASCII 路径会失败：`cannot read spec file '...picolibc.specs'`）。
+> 🔧 为什么镜像：本机 IDF v6.0.1 工具链对非 ASCII 工作区路径支持不佳——rsp 文件里的路径编码会被写坏，报 `cannot read spec file '...\x0a\x0a...'`；导出 UTF-8 locale 也无效。镜像目录为纯 ASCII，构建稳定。`~/coffe-build` 已带增量缓存，改完代码重跑上面 rsync + build 即可。
 
 烧录时使用项目自带分区表（`partitions.csv`），会自动写入 `ota_0` 并设置 otadata。
 
