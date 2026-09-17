@@ -110,13 +110,23 @@ idf.py -p /dev/cu.usbmodem* flash monitor
 
 ## 版本
 
-固件版本号由 `project(coffe_mcu VERSION ...)` 定义，`/api/status` 的 `version` 与开机日志 `App version:` 同步。发布记录见 `CHANGELOG.md`。常用 git 回退/打 tag：
+固件版本号由 `project(coffe_mcu VERSION ...)` 定义，`/api/status` 的 `version` 与开机日志 `App version:` 同步。发布记录见 `CHANGELOG.md`。
+
+**日常发布（一键）**：改好 `VERSION` + CHANGELOG 后执行：
 
 ```bash
-git log --oneline                # 查看可回滚提交
-git reset --hard <commit>        # 本地回退
+tools/release.sh v1.2.2 "变更摘要"   # 自动 commit + tag + push GitHub + rsync NAS
+```
+
+**回滚**：
+
+```bash
+git log --oneline                # 查看可回滚提交/tag
+git checkout v1.2.1              # 一键回到某个发布版
 git push origin main --force     # 需同步远程时（会重写历史，慎重）
 ```
+
+**临时改代码**（不必每次升版）：直接改 → `rsync` 到 `~/coffe-build` → Build；满意后再按上面流程升版发布。验证性的小改动可以随时 commit（带一句说明即可），发布点才打 tag。
 
 ## 已知限制（内部）
 
