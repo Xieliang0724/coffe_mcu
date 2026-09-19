@@ -92,13 +92,18 @@ idf.py -p /dev/cu.usbmodem* flash monitor
 
 ## 咖啡台 LED 控制（内部细节）
 
-- **通道 → GPIO**（`led_control.c`）：CH1..CH10 = `GPIO 0,1,4,8,13,14,10,6,23,24`（取自 E101-C5WN8-PS 开发板 datasheet，避开 C5 上不存在的 16/17）
+- **通道 → GPIO**（`led_control.c`，E101-C5WN8-PS 8MB 板）：CH1..CH10 = `GPIO 5,26,4,8,13,14,10,6,23,24`（对应排针 IO5,IO26,IO4,IO8,IO13,IO14,IO10,IO6,IO23,IO24）
 - **状态仅内存、掉电全灭**：不写 NVS（避免高频切换损耗 Flash）
-- **高有效**：`ACTIVE_LOW=0`（GPIO 置 1 = LED 亮）
-- **开关板**：NPN/漏极（低边）输出，输入 3.3V，高电平拉低 12V LED 负载地
-- **供电**：ESP32 用 3.3V（板载 5V USB 亦可）；12V LED 单独供电，两者**只共地**，勿让 12V 碰 ESP32
+- **触发极性**：`ACTIVE_LOW=1`（实测所用开关板 SIG 需 12V 电平，须加电平转换/光耦隔离；3.3V GPIO 直连 12V SIG 板会失控常亮）
+- **开关板**：低边开关；SIG 经电平转换后驱动，高/低触发以模块手册为准（改 `led_control.c` 的 `ACTIVE_LOW`）
+- **供电**：ESP32 用 3.3V/5V；12V LED 单独供电，两者**必须共地**，勿让 12V 碰 ESP32 引脚
 
-> ⚠️ **关键**：ESP32-C5 上 `GPIO16/17/18/19/20/21/22` 不存在（E101-C5WN8 datasheet 排针表未引出），配置会导致 `CPU_LOCKUP` 崩溃，**切勿使用**。可用 GPIO 见 datasheet 管脚表（如 0,1,2,3,4,5,6,7,8,9,10,13,14,23,24,25,26,28）。本项目已避开，且 `GPIO27`(RGB)、`GPIO9`(复位)、`GPIO11/12`(串口)、`GPIO15`(PSRAM，若带) 已占用。`GPIO5` 暂预留 485，`GPIO6` 现作 LED CH8。
+> ⚠️ **关键避坑**（实测结论）：
+> 1. `GPIO16~22` 在 ESP32-C5 上**不存在** → 配置即 `CPU_LOCKUP` 死机循环
+> 2. `GPIO0/1` 为 XTAL_32K/LP_UART 特殊脚 → 输出不可靠（实测拉不低），勿作输出
+> 3. `GPIO2/3/7` 为 boot strapping → 勿作 LED 输出（影响启动模式）；`GPIO25/26/28` 为 strapping 但高阻门极负载下可安全输出
+> 4. 已占用：`9`(复位) `11/12`(串口) `27`(RGB) `15`(PSRAM)；`CH5/6=GPIO13/14` 与原生 USB 复用，烧录用 USB-UART 口
+> 5. **换开发板必须重新核对管脚表再改 s_pins[]**（本表仅适用 E101-C5WN8-PS）
 
 ## 分区表（OTA）
 

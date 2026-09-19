@@ -1,14 +1,14 @@
 /*
  * led_control.c - 无界coffee · 10 路 LED 开关控制实现
  *
- * 引脚：见 s_pins[]，均取自 E101-C5WN8-PS 开发板排针引出的有效 GPIO
+ * 引脚：见 s_pins[]，全部为 E101-C5WN8-PS(8MB) 开发板排针引出且实测/datasheet 安全
  *   - 必须避开 ESP32-C5 上不存在的引脚(如 GPIO16/17/18-22)，否则 CPU_LOCKUP
- *   - PSRAM  : 15（模组带 PSRAM 时被占用）
- *   - 已用   : 9(复位),27(RGB),11,12(串口)
- *   - 说明   : 现用 GPIO6 作为 CH8，原 GPIO5/6 预留的 485(UART1) 暂缓
- * 故选用的 10 路：0,1,4,8,13,14,10,6,23,24
- * ⚠️ 接板前请对照开发板丝印确认这些脚都已引出且可用。
- *    如需改动，直接改 s_pins[] 数组即可。
+ *   - 必须避开 GPIO0/1(XTAL_32K/LP_UART 特殊脚，实测输出不可靠)
+ *   - 必须避开 2/3/7(boot strapping，影响启动模式)
+ *   - 已用   : 9(复位),27(RGB),11,12(串口),15(PSRAM)
+ *   - 说明   : GPIO5 原 485 预留已改作 CH1；CH2=GPIO26(strapping)经高阻门极负载不影响启动
+ * 故选用的 10 路：5,26,4,8,13,14,10,6,23,24
+ * ⚠️ 接板前请对照开发板丝印确认；换板子(如 16MB 板)时务必重查该板管脚表再改 s_pins[]。
  *
  * 状态模型：LED 状态**仅保存在内存**，**不写入 NVS/Flash**。
  * 设备重启（含掉电）后所有通道恢复为灭。原因：客户可能高频切换
@@ -27,12 +27,15 @@
 static const char *TAG = "led_ctrl";
 
 /* 10 路 GPIO：CH1..CH10 */
-/* 10 路 GPIO：CH1..CH10（均取自 E101-C5WN8-PS 开发板排针引出的有效 GPIO）
- * 注意：ESP32-C5 的 GPIO16/17 等引脚不存在/未引出，接入会触发 CPU_LOCKUP，
- * 故此处仅选用 datasheet 管脚表确认存在的引脚。 */
+/* 10 路 GPIO：CH1..CH10（E101-C5WN8-PS 8MB 开发板 · 全部实测/datasheet 确认安全）
+ * 已避开：GPIO0/1(XTAL_32K/LP_UART，实测不可靠)、2/3/7(boot strapping)、
+ *         9(复位键)、11/12(串口)、15(PSRAM)、16~22(不存在，配置会 CPU_LOCKUP)、27(RGB)
+ * 注：GPIO5 原 485 预留已改用为 CH1（485 暂不需要）；CH2=GPIO26 为 strapping，
+ *     MOSFET/光耦门极高阻不影响启动，可放心输出。
+ * 注：CH5/CH6=GPIO13/14 与板载 Type-C 原生 USB 复用，用 USB-UART 口烧录即可，勿同时用原生 USB。 */
 static gpio_num_t s_pins[LED_CHANNEL_COUNT] = {
-    GPIO_NUM_0,  // CH1
-    GPIO_NUM_1,  // CH2
+    GPIO_NUM_5,  // CH1
+    GPIO_NUM_26, // CH2
     GPIO_NUM_4,  // CH3
     GPIO_NUM_8,  // CH4
     GPIO_NUM_13, // CH5
@@ -45,9 +48,9 @@ static gpio_num_t s_pins[LED_CHANNEL_COUNT] = {
 
 static bool s_states[LED_CHANNEL_COUNT] = {false};
 
-/* 激活电平：0 = 高电平触发（输出高=灯亮，默认）
- * 若你的开关板是「低电平触发」，把这里改成 1。 */
-#define ACTIVE_LOW 0
+/* 激活电平：1 = 低电平触发（输出低=灯亮）
+ * 实测本开关板为「低电平触发」，故置 1（初始输出高=灭）。 */
+#define ACTIVE_LOW 1
 
 #if ACTIVE_LOW
 #define LEVEL_ON  0
